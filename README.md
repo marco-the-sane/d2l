@@ -1,6 +1,6 @@
-# What Is d2l
+# What is d2l
 data to ddl  - a command line tool deducting the CREATE TABLE statement from a CSV file.
-## How does that work?
+#### How does that work?
 Imagine this `titanic_passengers.csv` CSV file ...
 ```
 PassengerId;Survived;Pclass;Name;Sex;Age;SibSp;Parch;Ticket;Fare;Cabin;Embarked
@@ -37,20 +37,15 @@ CREATE TABLE titanic_passengers (
 );
 ```
 `d2l` deducts, by default, the column names from the first line in the file; and from all following columns, it will deduct the most stringent and most effective data type, and, where applicable, the column length, the precision and the scale of numbers. It will also suggest a `DATE` for a datetime literal, like `1957-04-22 00:00:00`, for example, to create an exactly matching standard `CREATE TABLE`statement.
-Default column delimiter is comma. Default record delimiter is the newline. Default string encloser/character delimiter is missing - the empty string. Default decimal point is the dot.
-It can assume column delimiters from extensions:
- - For `.bsv`, (bar separated values), the vertical bar
- - For `.ssv`, (semicolon separated values), the semicolon
- - For `.txt`, the horizontal tab `\t`
- - For `.csv`, (comma separated values), and while reading from stdin, and any other file extension, the comma
+Standard means as close to the standard ANSI format as possible - you might want to replace `INTEGER` with `NUMBER(9)` and `SMALLINT` with `NUMBER(5)` in Oracle, for example.
 
-You can, however, use whatever you like for column delimiter, record delimiter, string delimiter and decimal point.
+You use whatever you like for column delimiter, record delimiter, string delimiter and decimal point.
 You set them with switches:
 
- - `-chardel[:]<value>` for the character delimiter
- - `-coldel[:]<value>` for the column delimiter
- - `-recdel[:]<value>` for the record delimiter
- - `-decpoint[:]<value>` for the decimal point
+ - `-chardel[:]<value>` (default: none, empty string), expecting it to be doubled within the string, for the character delimiter
+ - `-coldel[:]<value>` (default: comma) for the column delimiter
+ - `-recdel[:]<value>` (default: newline) for the record delimiter
+ - `-decpoint[:]<value>` (default: dot) for the decimal point
 
 In all cases, you can set `<value>` in several ways:
 
@@ -58,10 +53,16 @@ In all cases, you can set `<value>` in several ways:
  - `x<hex number>|#<ascii number>|<unix literal>`
  - Just the character.
 
-So you can set the column delimiter to bar several ways, for example:
+So you can set the column delimiter to bar in several ways, for example:
  - `-coldelbar`
  - `-coldel:x7c`
  - `-coldel:'\|'` (need to escape the bar character on a Linux command line)
+
+It can assume column delimiters from extensions:
+ - For `.bsv`, (bar separated values), the vertical bar
+ - For `.ssv`, (semicolon separated values), the semicolon
+ - For `.txt`, the horizontal tab `\t`
+ - For `.csv`, (comma separated values), and while reading from stdin, and any other file extension, the comma
 
 Other switches are:
 
@@ -86,4 +87,13 @@ CREATE TABLE people (
 , sal   INTEGER  NOT NULL
 , dob   DATE     NOT NULL
 );
+```
+### How to compile
+Linux:
+```
+gcc -O3 -fomit-frame-pointer -Wall -pedantic -std=c99 -D _GNU_SOURCE -o d2l d2l.c
+```
+Mac:
+```
+clang -Ofast -Wall -pedantic -o d2l d2l.c
 ```
