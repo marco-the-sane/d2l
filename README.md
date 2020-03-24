@@ -68,6 +68,8 @@ Other switches are:
 
  - `-notitle` to say there is no first line with the column names, and the columns will become `col0001, col0002`, etc.
  - `-tbname:<table_name>` to specify a table name differing from the in-file base name.
+ - `-quid` to get quoted identifiers - if you want to use reserved words for column names, for example.
+ - `-float[:<number>]` to prefer FLOATs over NUMERICs. No number or 0 means always; else if more than <number> digits.
  - `-colcount:<number>` will parse exactly the specified number of columns, no matter how many column delimiters in the first line.
  - `-verbose` will print the parsed row count every 10,000 rows.
  - `-debug[:<number>]` will print an extended format of each line parsed. Either rather randomly, just `<number>` lines, or, with no number specified, all lines:
