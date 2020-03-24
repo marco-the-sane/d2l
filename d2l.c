@@ -60,12 +60,16 @@ char gDecPoint[sizeof(unsigned long long)]=".";
 char numchars[32]="+-.0123456789";
 int dateLen=0;
 int withTitle=1;
+int quotedIds=0;
+int preferFloat=0;
 int debug=0;
 int verbose=0;
 int piped=0;
 char getsbuf[16];
+char stringlitbuf[FIELDLEN];
 char buffer[BUFLEN];
 char colbuf[MAXCOLS][FIELDLEN]; // array of MAXCOLS pointers to FIELDLEN characters each
+long long nullcount [MAXCOLS];  // array of MAXCOLS NULL-value-found counters
 unsigned int colCount=MAXCOLS;
 unsigned int maxColCount=0;
 ColType gThisType=D2L_NOTYPE;
@@ -192,6 +196,30 @@ static char *Trim(char *s) {
   cp=s;while(isspace(*cp)) cp++;
   memmove(s,cp,strlen(cp)+1);
   return(s);
+}
+
+char *String2StringLiteral(char *t, char *s, char *charDel) {
+ char *cp;
+ int i,j;
+ cp=t;
+ if(!charDel[0])
+   return(s);
+ strcpy(t,charDel);
+ cp+=strlen(charDel);
+  for(i=0, j=0; s[i]; i++, j++) {
+    cp[j]=s[i];
+    if(cp[j]==charDel[0]) {
+      cp[++j]=charDel[0];
+    }
+    cp[j+1]=0;
+  }
+  strcpy(t+j+strlen(charDel),charDel);
+  return(t);
+}
+
+static char *QuoteString(char *id) {
+  strcpy(id,String2StringLiteral(stringlitbuf,id,"\""));
+  return(id);
 }
 
 unsigned int UnterminatedString(char *s, char *charDel) {
@@ -358,7 +386,13 @@ static int SIsAscii(char*s) {
 
 #define setnumlen(l,s){int _i=0;char *_cp=(s);for(_i=0;_cp[_i]&&isdigit(_cp[_i]);_i++){}; l=_i;}
 #define trimtrail0(s){int _i=strlen(s)-1;while(_i >=0 && s[_i]=='0') {s[_i]='\0';_i--;}};
-ColType GetDataType(int i, char *s, unsigned long long *colLen, unsigned long long *colPrec, unsigned long long *colScale) {
+ColType GetDataType(
+  int i
+, char *s
+, unsigned long long *colLen
+, unsigned long long *colPrec
+, unsigned long long *colScale
+) {
   double db;
   char cb[8];
   unsigned long long thisType=D2L_NOTYPE, thisPrec=0, thisScale=0;
@@ -642,9 +676,7 @@ ColType GetDataType(int i, char *s, unsigned long long *colLen, unsigned long lo
               thisType=D2L_STRING;
               thisScale=thisPrec=0;
             }
-          } else {
-            thisPrec+=thisScale;
-          }
+         }
         }
       } else {
         thisType=D2L_STRING;
@@ -694,12 +726,14 @@ int main(int argc, char**argv)
         , showLineCount=0, showNextLine=0; // variables for selecting lines to show
   for(i=0;i<MAXCOLS;i++) {
     sprintf(colName[i],"col%04d", i+1);
+    nullcount[i]=0;
   }
   if(argc<2){
     printf(
      "Deducts the data type and the column name from first line and following literals in a file.\n"
-     "Usage is %s [-coldel=<sep>] [-chardel=<chardel>] [-recdel=<recdel>] [-notitle][-debug[:<n>]][-tbname:<tbname>][-verbose] <file name> [> outfile]\n"
+     "Usage is %s [-coldel=<sep>] [-chardel=<chardel>] [-recdel=<recdel>] [-notitle][-debug[:<n>]][-tbname:<tbname>][-verbose] <file name>|- [> outfile]\n"
      "e. g.    %s -coldel:(SEMI|COMMA|BAR|x7c|','),' -chardel:(APO|QUOTE) myfile.txt   >myfile.ddl\n"
+		 "The hyphen instead of <file name> means stdin and makes the default table name \"stdin\".\n"
      "-coldel=<sep> is the column delimiter, defaulting to ',',\n"
      "     and, depending on infile extension: txt -> '\\t', csv -> ',', bsv -> '|', ssv -> ';'\n"
      "-chardel=<sep> is the character/string delimiter, defaulting to empty string\n"
@@ -708,6 +742,8 @@ int main(int argc, char**argv)
      " <sep> can be: SEMI|COMMA|BAR|TAB|APO[STROPHE]|QUOTE or #<ascii number> or 'x<hex number>' or Unix literals like '\\t'\n"
      "-debug[:<number>] prints lines in an extended display format; with <number> specified, only <number> lines, not all\n"
      "-notitle treats the first line as data, not column names\n"
+     "-quid switches generation of quoted identifiers on\n"
+		 "-float[=<number] to prefer FLOATs over NUMERICs. No number or 0: always; else if more than <number> digits.\n"
      "-tbname:<tbname> uses <tbname> instead of the infile's basename as the table name\n"
      "-verbose will show progress printing number of lines read to stderr\n"
      "-colcount:<number> will parse exactly <number> columns, no matter how many columns in the first line.\n"
@@ -735,7 +771,6 @@ int main(int argc, char**argv)
       cp=argv[i]+7;
       while(isspace(*cp)||*cp=='='||*cp==':') cp++;
       strncpy(tbName,cp,sizeof(tbName)-1);
-      // ChangeStrDefault(argv[i]+7,tbName,sizeof(tbName)-1);
     } else if(!Strnicmp(argv[i],"-debug",6)) {
       debug=1;
       showLineCount=0;
@@ -748,10 +783,21 @@ int main(int argc, char**argv)
         ChangeStrDefault(argv[i]+9, buf, sizeof(buf)-1);
         maxColCount=colCount=atoi(buf);
       }
+    } else if(!Strnicmp(argv[i],"-float",6)) {
+      if(argv[i][6]) {
+        ChangeStrDefault(argv[i]+6, buf, sizeof(buf)-1);
+        preferFloat=atoi(buf);
+      } else {
+				preferFloat=1;
+			}
     } else if(!Stricmp(argv[i],"-notitle")) {
       withTitle=0;
     } else if(!Stricmp(argv[i],"-verbose")) {
       verbose=1;
+    } else if(!Stricmp(argv[i],"-quid")) {
+      quotedIds=1;
+    } else if(!Stricmp(argv[i],"-noquid")) {
+      quotedIds=0;
     } else if(!Stricmp(argv[i],"-")) {
       in=stdin;
     } else if(argv[i][0]=='-' && !! argv[i][1] ) {
@@ -760,7 +806,6 @@ int main(int argc, char**argv)
     }
   }
   if(in==stdin) {
-    fprintf(stderr,"from stdin\n");
     piped=1;
   } else {
      if(!argv[i]|| !argv[i][0]) {
@@ -891,6 +936,7 @@ int main(int argc, char**argv)
           gThisType=GetDataType(i, colbuf[i], gColLen+i, gColPrec+i, gColScale+i);
         } else {
           gColIsNullable[i]=1;
+          nullcount[i]++;
           continue;
         }
       }
@@ -956,23 +1002,28 @@ int main(int argc, char**argv)
   if(debug && piped && showLineCount) {
     printf("from pipe; last line of input:\n");DebugColumns(colbuf);
   }
+  if(quotedIds) QuoteString(tbName);
   printf("CREATE TABLE %s (\n", tbName);
   for(i=0;i<colCount;i++) {
-  if(gColType[i]==D2L_NOTYPE) {
-    strcpy(colTypeName[i],"VARCHAR(32)");
-  } else if(gColType[i]==D2L_BOOLEAN) {
-    strcpy(colTypeName[i],"BOOLEAN");
-  } else if(gColType[i]==D2L_UUID) {
-    strcpy(colTypeName[i],"UUID");
-  } else if(gColType[i]==D2L_FLOAT) {
-    strcpy(colTypeName[i],"FLOAT");
-  } else if(gColType[i]==D2L_NUMBER && gColScale[i]==0) {
+    if(gColType[i]==D2L_NOTYPE) {
+      strcpy(colTypeName[i],"VARCHAR(32)");
+    } else if(gColType[i]==D2L_BOOLEAN) {
+      strcpy(colTypeName[i],"BOOLEAN");
+    } else if(gColType[i]==D2L_UUID) {
+      strcpy(colTypeName[i],"UUID");
+    } else if(gColType[i]==D2L_FLOAT) {
+      strcpy(colTypeName[i],"FLOAT");
+    } else if(gColType[i]==D2L_NUMBER && gColScale[i]==0) {
       if(gColPrec[i]<5)       strcpy(colTypeName[i],"SMALLINT");
       else if(gColPrec[i]<10) strcpy(colTypeName[i],"INTEGER");
       else if(gColPrec[i]<18) strcpy(colTypeName[i],"BIGINT");
       else sprintf(colTypeName[i],"NUMERIC(%llu)",gColPrec[i]); 
     } else if(gColType[i]==D2L_NUMBER) {
-      sprintf(colTypeName[i],"NUMERIC(%llu,%llu)",gColPrec[i],gColScale[i]);
+		 	if(preferFloat && gColScale[i] >= preferFloat) {
+        strcpy(colTypeName[i],"FLOAT");
+			} else {
+        sprintf(colTypeName[i],"NUMERIC(%llu,%llu)",gColPrec[i]+gColScale[i],gColScale[i]);
+			}
     } else if(gColType[i]==D2L_NSTRING) {
       sprintf(colTypeName[i],"%s(%llu)",gColLen[i]>=10?"NCHAR VARYING":"NCHAR", gColLen[i]);
     } else if(gColType[i]==D2L_STRING) {
@@ -994,16 +1045,25 @@ int main(int argc, char**argv)
   for(i=0;i<colCount;i++) {
     maxNmLen=max(maxNmLen,(unsigned int)strlen(colName[i]));
     maxTpLen=max(maxTpLen,(unsigned int)strlen(colTypeName[i]));
+    if(quotedIds) QuoteString(colName[i]);
   }
   for(i=0;i<colCount;i++) {
+    char nullLog[64]="";
+    if(gColIsNullable[i]) {
+      if(gColType[i]==D2L_NOTYPE) {
+        strcpy(nullLog," /*always null*/");
+      } else {
+        sprintf(nullLog,"/* %lld NULLs out of %ld */", nullcount[i],readCount);
+      }
+    }
     printf(
       "%s %-*s %-*s%s\n"
     , (!i?" ":",")
-    , maxNmLen
+    , maxNmLen+2*quotedIds
     , colName[i]
     , maxTpLen
     , colTypeName[i]
-    , gColIsNullable[i]?(gColType[i]==D2L_NOTYPE?" /*always null*/":""):" NOT NULL");
+    , gColIsNullable[i]?nullLog:" NOT NULL");
   }
   printf(");\n");
   return(0);
