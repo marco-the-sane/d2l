@@ -715,6 +715,8 @@ int main(int argc, char**argv)
 {
   FILE *in=NULL;
   char tbName[128]="";
+  char ctName[128]="";
+  char scName[128]="";
   char ext[32];
   unsigned int i=0;
   char *bncp; // base name char pointer
@@ -745,6 +747,8 @@ int main(int argc, char**argv)
      "-quid switches generation of quoted identifiers on\n"
 		 "-float[=<number] to prefer FLOATs over NUMERICs. No number or 0: always; else if more than <number> digits.\n"
      "-tbname:<tbname> uses <tbname> instead of the infile's basename as the table name\n"
+     "-sch:<schemaname> adds <schemaname> to qualify the table name\n"
+     "-cat:<catname> adds <catname> to qualify the table name\n"
      "-verbose will show progress printing number of lines read to stderr\n"
      "-colcount:<number> will parse exactly <number> columns, no matter how many columns in the first line.\n"
      "author marco.gessner@microfocus.com\n"
@@ -771,6 +775,14 @@ int main(int argc, char**argv)
       cp=argv[i]+7;
       while(isspace(*cp)||*cp=='='||*cp==':') cp++;
       strncpy(tbName,cp,sizeof(tbName)-1);
+    } else if(!Strnicmp(argv[i],"-cat=",4)) {
+      cp=argv[i]+4;
+      while(isspace(*cp)||*cp=='='||*cp==':') cp++;
+      strncpy(ctName,cp,sizeof(ctName)-1);
+    } else if(!Strnicmp(argv[i],"-sch=",4)) {
+      cp=argv[i]+4;
+      while(isspace(*cp)||*cp=='='||*cp==':') cp++;
+      strncpy(scName,cp,sizeof(scName)-1);
     } else if(!Strnicmp(argv[i],"-debug",6)) {
       debug=1;
       showLineCount=0;
@@ -1003,7 +1015,12 @@ int main(int argc, char**argv)
     printf("from pipe; last line of input:\n");DebugColumns(colbuf);
   }
   if(quotedIds) QuoteString(tbName);
-  printf("CREATE TABLE %s (\n", tbName);
+  if(quotedIds&&scName[0]) QuoteString(scName);
+  if(quotedIds&&ctName[0]) QuoteString(ctName);
+  printf("CREATE TABLE ");
+	if(ctName[0]) printf("%s.", ctName);
+	if(scName[0]||ctName[0rintf("%s.", scName);
+	printf("%s (\n", tbName);
   for(i=0;i<colCount;i++) {
     if(gColType[i]==D2L_NOTYPE) {
       strcpy(colTypeName[i],"VARCHAR(32)");
@@ -1053,7 +1070,7 @@ int main(int argc, char**argv)
       if(gColType[i]==D2L_NOTYPE) {
         strcpy(nullLog," /*always null*/");
       } else {
-        sprintf(nullLog,"/* %lld NULLs out of %ld */", nullcount[i],readCount);
+        sprintf(nullLog," /* %lld NULLs out of %ld */", nullcount[i],readCount);
       }
     }
     printf(
