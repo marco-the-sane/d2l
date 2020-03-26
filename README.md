@@ -68,6 +68,8 @@ Other switches are:
 
  - `-notitle` to say there is no first line with the column names, and the columns will become `col0001, col0002`, etc.
  - `-tbname:<table_name>` to specify a table name differing from the in-file base name.
+ - `-sch:<schemaname>` adds `<schemaname>` to qualify the table name
+  - `-cat:<catname>` adds `<catname>` to qualify the table name
  - `-quid` to get quoted identifiers - if you want to use reserved words for column names, for example.
  - `-float[:<number>]` to prefer FLOATs over NUMERICs. No number or 0 means always; else if more than `<number>` digits.
  - `-colcount:<number>` will parse exactly the specified number of columns, no matter how many column delimiters in the first line.
