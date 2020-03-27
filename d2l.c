@@ -1019,7 +1019,7 @@ int main(int argc, char**argv)
   if(quotedIds&&ctName[0]) QuoteString(ctName);
   printf("CREATE TABLE ");
 	if(ctName[0]) printf("%s.", ctName);
-	if(scName[0]||ctName[0rintf("%s.", scName);
+	if(scName[0]||ctName[0]) printf("%s.", scName);
 	printf("%s (\n", tbName);
   for(i=0;i<colCount;i++) {
     if(gColType[i]==D2L_NOTYPE) {
@@ -1068,9 +1068,9 @@ int main(int argc, char**argv)
     char nullLog[64]="";
     if(gColIsNullable[i]) {
       if(gColType[i]==D2L_NOTYPE) {
-        strcpy(nullLog," /*always null*/");
+        strcpy(nullLog," -- always null");
       } else {
-        sprintf(nullLog," /* %lld NULLs out of %ld */", nullcount[i],readCount);
+        sprintf(nullLog," -- %lld NULLs out of %ld", nullcount[i],readCount);
       }
     }
     printf(
