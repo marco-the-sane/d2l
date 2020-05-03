@@ -393,8 +393,8 @@ ColType GetDataType(
 , unsigned long long *colPrec
 , unsigned long long *colScale
 ) {
-  double db;
-  char cb[8];
+//  double db;
+//  char cb[8];
   unsigned long long thisType=D2L_NOTYPE, thisPrec=0, thisScale=0;
   int dateLen=0;
   *colLen=max(*colLen,(unsigned long long)strlen(s));
@@ -553,17 +553,117 @@ ColType GetDataType(
      ) || (
          isdigit(s[0]) // 0 
       && isdigit(s[1]) // 1 
-      && ispunct(s[2]) // - 
+      &&!isdigit(s[2]) // - 
       && isalpha(s[3]) // f 
       && isalpha(s[4]) // e 
       && isalpha(s[5]) // b 
-      && ispunct(s[6]) // - 
+      &&!isdigit(s[6]) // - 
       && isdigit(s[7]) // 1 
       && isdigit(s[8]) // 9 
       && (   ( !isdigit(s[9]) && (dateLen=9) )
           || ( isdigit(s[9])&&isdigit(s[10])&&!isdigit(s[11])&&(dateLen=11 ) )
          )
      
+     ) || (
+         isdigit(s[0]) // 0 
+      && isdigit(s[1]) // 1 
+      &&!isdigit(s[2]) // - 
+      && isalpha(s[3]) // j 
+      && isalpha(s[4]) // u 
+      && isalpha(s[5]) // n 
+      && isalpha(s[6]) // e 
+      &&!isdigit(s[7]) // - 
+      && isdigit(s[8]) // 1 
+      && isdigit(s[9]) // 9 
+      && (   ( !isdigit(s[10]) && (dateLen=10) )
+          || ( isdigit(s[10])&&isdigit(s[11])&&!isdigit(s[12])&&(dateLen=12 ) )
+         )
+     
+     ) || (
+         isdigit(s[ 0]) // 0 
+      && isdigit(s[ 1]) // 1 
+      &&!isdigit(s[ 2]) // - 
+      && isalpha(s[ 3]) // a 
+      && isalpha(s[ 4]) // p 
+      && isalpha(s[ 5]) // r 
+      && isalpha(s[ 6]) // i 
+      && isalpha(s[ 7]) // l 
+      &&!isdigit(s[ 8]) // - 
+      && isdigit(s[ 9]) // 1 
+      && isdigit(s[10]) // 9 
+      && (   ( !isdigit(s[11]) && (dateLen=11) )
+          || ( isdigit(s[11])&&isdigit(s[12])&&!isdigit(s[13])&&(dateLen=13 ) )
+         )
+     ) || (
+         isdigit(s[ 0]) // 0 
+      && isdigit(s[ 1]) // 1 
+      &&!isdigit(s[ 2]) // - 
+      && isalpha(s[ 3]) // a 
+      && isalpha(s[ 4]) // u 
+      && isalpha(s[ 5]) // g 
+      && isalpha(s[ 6]) // u 
+      && isalpha(s[ 7]) // s 
+      && isalpha(s[ 8]) // t 
+      &&!isdigit(s[ 9]) // - 
+      && isdigit(s[10]) // 1 
+      && isdigit(s[11]) // 9 
+      && (   ( !isdigit(s[12]) && (dateLen=12) )
+          || ( isdigit(s[12])&&isdigit(s[13])&&!isdigit(s[14])&&(dateLen=14 ) )
+         )
+     ) || (
+         isdigit(s[ 0]) // 0 
+      && isdigit(s[ 1]) // 1 
+      &&!isdigit(s[ 2]) // - 
+      && isalpha(s[ 3]) // j 
+      && isalpha(s[ 4]) // a 
+      && isalpha(s[ 5]) // n 
+      && isalpha(s[ 6]) // u 
+      && isalpha(s[ 7]) // a 
+      && isalpha(s[ 8]) // r 
+      && isalpha(s[ 9]) // y 
+      &&!isdigit(s[10]) // - 
+      && isdigit(s[11]) // 1 
+      && isdigit(s[12]) // 9 
+      && (   ( !isdigit(s[13]) && (dateLen=13) )
+          || ( isdigit(s[13])&&isdigit(s[14])&&!isdigit(s[15])&&(dateLen=15 ) )
+         )
+     ) || (
+         isdigit(s[ 0]) // 0 
+      && isdigit(s[ 1]) // 1 
+      &&!isdigit(s[ 2]) // - 
+      && isalpha(s[ 3]) // n 
+      && isalpha(s[ 4]) // o 
+      && isalpha(s[ 5]) // v 
+      && isalpha(s[ 6]) // e 
+      && isalpha(s[ 7]) // m 
+      && isalpha(s[ 8]) // b 
+      && isalpha(s[ 9]) // e 
+      && isalpha(s[10]) // r 
+      &&!isdigit(s[11]) // - 
+      && isdigit(s[12]) // 1 
+      && isdigit(s[13]) // 9 
+      && (   ( !isdigit(s[14]) && (dateLen=14) )
+          || ( isdigit(s[14])&&isdigit(s[15])&&!isdigit(s[16])&&(dateLen=16 ) )
+         )
+     ) || (
+         isdigit(s[ 0]) // 0 
+      && isdigit(s[ 1]) // 1 
+      &&!isdigit(s[ 2]) // - 
+      && isalpha(s[ 3]) // s 
+      && isalpha(s[ 4]) // e 
+      && isalpha(s[ 5]) // p 
+      && isalpha(s[ 6]) // t 
+      && isalpha(s[ 7]) // e 
+      && isalpha(s[ 8]) // m 
+      && isalpha(s[ 9]) // b 
+      && isalpha(s[10]) // e 
+      && isalpha(s[11]) // r 
+      &&!isdigit(s[12]) // - 
+      && isdigit(s[13]) // 1 
+      && isdigit(s[14]) // 9 
+      && (   ( !isdigit(s[15]) && (dateLen=15) )
+          || ( isdigit(s[15])&&isdigit(s[16])&&!isdigit(s[17])&&(dateLen=17 ) )
+         )
      ) 
     ) {
     if(!s[dateLen]) {
@@ -578,10 +678,10 @@ ColType GetDataType(
         && ':' ==  s[dateLen+3]
         && isdigit(s[dateLen+4])
         && isdigit(s[dateLen+5])
-        && ':' ==  s[dateLen+6]
-        && isdigit(s[dateLen+7])
-        && isdigit(s[dateLen+8])
-        && (!s[dateLen+9]||toupper(s[dateLen+9])=='Z'||s[dateLen+9]=='.')
+        && (
+					 (!s[dateLen+6]||toupper(s[dateLen+6])=='Z'||s[dateLen+6]=='.')
+        || (!s[dateLen+9]||toupper(s[dateLen+9])=='Z'||s[dateLen+9]=='.')
+				)
         ) {
         thisType=D2L_DATETIME;
         if(toupper(s[dateLen+9])=='Z') {
@@ -635,7 +735,9 @@ ColType GetDataType(
       if(s[8])
         thisType=D2L_STRING;
     }
-  } else if ( strchr(numchars,s[0])) {
+  } else if ( 
+			strchr(numchars,s[0])
+		) {
     thisType=D2L_NUMBER;
     if(strchr("+-",s[0])) {
       if(isdigit(s[1])) {
@@ -665,9 +767,16 @@ ColType GetDataType(
           trimtrail0(s);
           if(!strcmp(s,"0")) *s=0;
           setnumlen(thisScale,s);
-          if(toupper(s[thisScale])=='E' && strcat(s,"test") && sscanf(s,"%lf%s", &db,cb)==2 && !strcmp(cb,"test")) {
+          if(toupper(s[thisScale])=='E'
+  				 &&(s[thisScale+1] == '+'
+  					||s[thisScale+1] == '-')
+					 &&isdigit(s[thisScale+2])
+					 &&isdigit(s[thisScale+3])
+					 &&!       s[thisScale+4]
+						) {
             thisType=D2L_FLOAT;
             thisPrec=thisScale=0;
+            return(thisType);
           }
           if(s[thisScale]) {
             int j;
@@ -733,7 +842,8 @@ int main(int argc, char**argv)
   if(argc<2){
     printf(
      "Deducts the data type and the column name from first line and following literals in a file.\n"
-     "Usage is %s [-coldel=<sep>] [-chardel=<chardel>] [-recdel=<recdel>] [-notitle][-debug[:<n>]][-tbname:<tbname>][-verbose] <file name>|- [> outfile]\n"
+     "Usage is %s [-coldel=<sep>] [-chardel=<chardel>] [-recdel=<recdel>] [-notitle][-debug[:<n>]] \\\n"
+     "            [-tbname:<tbname>][-verbose] <file name>|- [> outfile]\n"
      "e. g.    %s -coldel:(SEMI|COMMA|BAR|x7c|','),' -chardel:(APO|QUOTE) myfile.txt   >myfile.ddl\n"
 		 "The hyphen instead of <file name> means stdin and makes the default table name \"stdin\".\n"
      "-coldel=<sep> is the column delimiter, defaulting to ',',\n"
