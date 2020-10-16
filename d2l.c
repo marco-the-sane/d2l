@@ -15,10 +15,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
-#ifndef _WIN32
 #define max(a,b) ((a)>(b)?(a):(b))
 #define min(a,b) ((a)<(b)?(a):(b))
-#endif
 typedef enum{
   D2L_NOTYPE       // 0
 , D2L_NUMBER       // 1
@@ -669,6 +667,7 @@ ColType GetDataType(
     if(!s[dateLen]) {
       thisType=D2L_DATE;
     } else {
+
       if(!s[dateLen]) {
         thisType=D2L_DATE;
       } else if (
@@ -688,15 +687,28 @@ ColType GetDataType(
           s[dateLen+9]=0;
           thisType=D2L_TIMESTAMPTZ;
         } else if(s[dateLen+9]=='.') {
-          trimtrail0(s);
-          setnumlen(thisScale,s+dateLen+1+9);
-          thisType=D2L_TIMESTAMP;
+          char *cq=s+dateLen+10;
+          thisScale=0;
+          while(isdigit(*cq)) {thisScale++;cq++;}
+          if((*cq=='+'||*cq=='-')
+           && isdigit(cq[1])
+           && isdigit(cq[2])
+           && isdigit(cq[4])
+           && isdigit(cq[5])
+          ) {
+            thisType=D2L_TIMESTAMPTZ;
+            *colScale=(unsigned long long)max(gColScale[i],thisScale);
+            return(thisType);
+          } else {
+            trimtrail0(s);
+            setnumlen(thisScale,s+dateLen+1+9);
+            thisType=D2L_TIMESTAMP;
+          }
         } else if(!strcmp(s+dateLen+1,"00:00:00")) {
           thisType=D2L_DATE;
         } else if (!strchr(s,'-') && !strchr(s,'+')) {
           trimtrail0(s);
         }
-        setnumlen(thisScale,s+dateLen+1+9);
         if(s[dateLen+1+9+thisScale]) {
           if((s[thisScale+0]=='+'||s[thisScale+0]=='-')
             &&isdigit(s[thisScale+1])
@@ -738,6 +750,7 @@ ColType GetDataType(
   } else if ( 
 			strchr(numchars,s[0])
 		) {
+    char *t=s;
     thisType=D2L_NUMBER;
     if(strchr("+-",s[0])) {
       if(isdigit(s[1])) {
@@ -754,6 +767,9 @@ ColType GetDataType(
     setnumlen(thisPrec,s);
     if(!s[thisPrec]) {
       thisScale=0;
+      if(thisPrec==19 && atoi(t)<=9223372036854775807) {
+        thisPrec=18;
+      }
     } else {
       if(s[thisPrec]==gDecPoint[0]) {
         if(s[0]=='0' && s[1] && s[1] !=gDecPoint[0]) { // if the first character is a zero and not followed by a decimal point, it's not numeric
@@ -767,6 +783,9 @@ ColType GetDataType(
           trimtrail0(s);
           if(!strcmp(s,"0")) *s=0;
           setnumlen(thisScale,s);
+          if(thisPrec==19 && atoi(t)<=9223372036854775807) {
+            thisPrec=18;
+          }
           if(toupper(s[thisScale])=='E'
   				 &&(s[thisScale+1] == '+'
   					||s[thisScale+1] == '-')
@@ -855,13 +874,13 @@ int main(int argc, char**argv)
      "-debug[:<number>] prints lines in an extended display format; with <number> specified, only <number> lines, not all\n"
      "-notitle treats the first line as data, not column names\n"
      "-quid switches generation of quoted identifiers on\n"
-		 "-float[=<number] to prefer FLOATs over NUMERICs. No number or 0: always; else if more than <number> digits.\n"
+		 "-float[=<number] to prefer FLOATs over NUMERICs. No number or 0: always; else if more than scale of <number>.\n"
      "-tbname:<tbname> uses <tbname> instead of the infile's basename as the table name\n"
      "-sch:<schemaname> adds <schemaname> to qualify the table name\n"
      "-cat:<catname> adds <catname> to qualify the table name\n"
      "-verbose will show progress printing number of lines read to stderr\n"
      "-colcount:<number> will parse exactly <number> columns, no matter how many columns in the first line.\n"
-     "author marco.gessner@microfocus.com\n"
+     "author marco.gessner@vertica.com\n"
     , argv[0], argv[0]);
     return(-1);
   }
@@ -1143,7 +1162,7 @@ int main(int argc, char**argv)
     } else if(gColType[i]==D2L_NUMBER && gColScale[i]==0) {
       if(gColPrec[i]<5)       strcpy(colTypeName[i],"SMALLINT");
       else if(gColPrec[i]<10) strcpy(colTypeName[i],"INTEGER");
-      else if(gColPrec[i]<18) strcpy(colTypeName[i],"BIGINT");
+      else if(gColPrec[i]<19) strcpy(colTypeName[i],"BIGINT");
       else sprintf(colTypeName[i],"NUMERIC(%llu)",gColPrec[i]); 
     } else if(gColType[i]==D2L_NUMBER) {
 		 	if(preferFloat && gColScale[i] >= preferFloat) {
