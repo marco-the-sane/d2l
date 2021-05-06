@@ -73,6 +73,8 @@ Other switches are:
  - `-quid` to get quoted identifiers - if you want to use reserved words for column names, for example.
  - `-float[:<number>]` to prefer FLOATs over NUMERICs. No number or 0 means always; else if more than `<number>` digits.
  - `-colcount:<number>` will parse exactly the specified number of columns, no matter how many column delimiters in the first line.
+ - `-drp` will generate a `DROP TABLE IF EXISTS` statement before the `CREATE TABLE` statement.
+ - `-copycast` will generate a Vertica `COPY` statement to load the data and cast it to the detected final data types.
  - `-verbose` will print the parsed row count every 10,000 rows.
  - `-debug[:<number>]` will print an extended format of each line parsed. Either rather randomly, just `<number>` lines, or, with no number specified, all lines:
  ```bash

@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------*/
-/* data2ddl.c - infers data type from literals in csv file            */
+/* d2ll.c     - infers data type from literals in csv file            */
 /* author marco gessner                                               */
 /*--------------------------------------------------------------------*/
 /* Compile like so:
@@ -49,6 +49,7 @@ struct _d2l_types {
 , {D2L_BOOLEAN    ,  "D2L_BOOLEAN"     } //10
 , {D2L_UUID       ,  "D2L_UUID"        } //11
 } ;
+char flName[512]="";
 char dB[4];
 char gColDel  [sizeof(unsigned long long)]=",";
 char gCharDel [sizeof(unsigned long long)]="";
@@ -60,6 +61,8 @@ int dateLen=0;
 int withTitle=1;
 int quotedIds=0;
 int preferFloat=0;
+int copycast=0;
+int drp=0;
 int debug=0;
 int verbose=0;
 int piped=0;
@@ -77,9 +80,9 @@ int gColIsNullable[MAXCOLS];
 unsigned long long gColLen[MAXCOLS];
 unsigned long long gColPrec[MAXCOLS];
 unsigned long long gColScale[MAXCOLS];
+int hasDeviantDecpoint[MAXCOLS];
 char colName[MAXCOLS][128];
 char colTypeName[MAXCOLS][128];
-char loadFlName[512];
 size_t readCount = 0 ;
 
 static int Stricmp(char *s1, char* s2) {
@@ -172,7 +175,7 @@ char *Replace(char *baseString, char *searchString, char *replaceString) {
         }
       } while(*cE==searchString[i] && searchString[i]);
       memmove(cE+strlen(replaceString)-(cE-cB), cE, strlen(cE)+1);
-      strncpy(cB,replaceString,strlen(replaceString));
+      strncpy(cB,replaceString,min(strlen(replaceString),4));
     }
   }
   return(baseString);
@@ -358,7 +361,7 @@ static int GetColData(
     }
     if(r<0) {
       fprintf(stderr,"%s(%llu)\t<%.*s...>\ncolumn %d, %s:",
-              loadFlName, (unsigned long long)readCount, (int)min(30,strlen(buf)-1), buf, (int)i+1, colName[i]);
+              flName, (unsigned long long)readCount, (int)min(30,strlen(buf)-1), buf, (int)i+1, colName[i]);
       if(r==-1)
         fprintf(stderr, " bad %s conversion\n",typeName);
       else if(r==-2)
@@ -372,6 +375,59 @@ static int GetColData(
   }
   return(0);
 }
+
+static int IsNumeric(ColType type) {
+  return (
+     type==D2L_NUMBER
+   ||type==D2L_FLOAT
+  );
+}
+
+
+void Buildtypename(
+  ColType colType
+ ,size_t colSize
+ ,size_t colPrec
+ ,size_t scale
+ ,char *typename
+ ) {
+  if(colType==D2L_NOTYPE) {
+    strcpy(typename,"VARCHAR(32)");
+  } else if(colType==D2L_BOOLEAN) {
+    strcpy(typename,"BOOLEAN");
+  } else if(colType==D2L_UUID) {
+    strcpy(typename,"UUID");
+  } else if(colType==D2L_FLOAT) {
+    strcpy(typename,"FLOAT");
+  } else if(colType==D2L_NUMBER && scale==0) {
+    if(colPrec<5)       strcpy(typename,"SMALLINT");
+    else if(colPrec<10) strcpy(typename,"INTEGER");
+    else if(colPrec<19) strcpy(typename,"BIGINT");
+    else sprintf(typename,"NUMERIC(%lu)",colPrec); 
+  } else if(colType==D2L_NUMBER) {
+  if(preferFloat && scale > preferFloat) {
+      strcpy(typename,"FLOAT");
+  } else {
+      sprintf(typename,"NUMERIC(%lu,%lu)",colPrec+scale,scale);
+  }
+  } else if(colType==D2L_NSTRING) {
+    sprintf(typename,"%s(%lu)",colSize>=10?"NCHAR VARYING":"NCHAR", colSize);
+  } else if(colType==D2L_STRING) {
+    sprintf(typename,"%sCHAR(%lu)",colSize>=10?"VAR":"", colSize);
+  } else if(colType==D2L_DATE) {
+    strcpy(typename,"DATE");
+  } else if(colType==D2L_DATETIME) {
+    strcpy(typename,"TIMESTAMP(0)");
+  } else if(colType==D2L_TIMESTAMP) {
+    sprintf(typename,"TIMESTAMP(%lu)",scale);
+  } else if(colType==D2L_TIMESTAMPTZ) {
+    sprintf(typename,"TIMESTAMPTZ(%lu)",scale);
+  } else if(colType==D2L_TIME) {
+    if(!scale) strcpy(typename,"TIME");
+    else sprintf(typename,"TIME(%lu)",scale);
+  }
+}
+
 
 static int SIsAscii(char*s) {
   int i;
@@ -391,8 +447,7 @@ ColType GetDataType(
 , unsigned long long *colPrec
 , unsigned long long *colScale
 ) {
-//  double db;
-//  char cb[8];
+
   unsigned long long thisType=D2L_NOTYPE, thisPrec=0, thisScale=0;
   int dateLen=0;
   *colLen=max(*colLen,(unsigned long long)strlen(s));
@@ -678,9 +733,9 @@ ColType GetDataType(
         && isdigit(s[dateLen+4])
         && isdigit(s[dateLen+5])
         && (
-					 (!s[dateLen+6]||toupper(s[dateLen+6])=='Z'||s[dateLen+6]=='.')
+           (!s[dateLen+6]||toupper(s[dateLen+6])=='Z'||s[dateLen+6]=='.')
         || (!s[dateLen+9]||toupper(s[dateLen+9])=='Z'||s[dateLen+9]=='.')
-				)
+        )
         ) {
         thisType=D2L_DATETIME;
         if(toupper(s[dateLen+9])=='Z') {
@@ -693,8 +748,10 @@ ColType GetDataType(
           if((*cq=='+'||*cq=='-')
            && isdigit(cq[1])
            && isdigit(cq[2])
-           && isdigit(cq[4])
-           && isdigit(cq[5])
+           && (
+           !isdigit(cq[3])
+            ||( isdigit(cq[4]) && isdigit(cq[5]) )
+       )
           ) {
             thisType=D2L_TIMESTAMPTZ;
             *colScale=(unsigned long long)max(gColScale[i],thisScale);
@@ -748,14 +805,14 @@ ColType GetDataType(
         thisType=D2L_STRING;
     }
   } else if ( 
-			strchr(numchars,s[0])
-		) {
+      strchr(numchars,s[0])
+    ) {
     char *t=s;
     thisType=D2L_NUMBER;
     if(strchr("+-",s[0])) {
       if(isdigit(s[1])) {
         s=s+1;
-      } else if(toupper(s[1])=='E' && isdigit(s[2]) && isdigit(s[3]) && ! s[4]) {
+      } else if(toupper(s[1])=='E' && isdigit(s[2]) && ( (! s[3]) || ( isdigit(s[3]) && ! s[4]) ) ) {
         thisType=D2L_FLOAT;
         thisPrec=thisScale=0;
         return(thisType);
@@ -780,19 +837,25 @@ ColType GetDataType(
           if(thisPrec==0) {
             thisPrec++;
           }
-          trimtrail0(s);
+          if(!strchr(s,'e') && !strchr(s,'E')) { 
+		    trimtrail0(s);
+		  }
           if(!strcmp(s,"0")) *s=0;
           setnumlen(thisScale,s);
           if(thisPrec==19 && atoi(t)<=9223372036854775807) {
             thisPrec=18;
           }
           if(toupper(s[thisScale])=='E'
-  				 &&(s[thisScale+1] == '+'
-  					||s[thisScale+1] == '-')
-					 &&isdigit(s[thisScale+2])
-					 &&isdigit(s[thisScale+3])
-					 &&!       s[thisScale+4]
-						) {
+           &&(s[thisScale+1] == '+'
+            ||s[thisScale+1] == '-')
+           &&isdigit(s[thisScale+2])
+           && (
+              ! s[thisScale+3] 
+           ||(  isdigit(s[thisScale+3]) 
+              &&!s[thisScale+4] 
+		     )
+           )
+          ) {
             thisType=D2L_FLOAT;
             thisPrec=thisScale=0;
             return(thisType);
@@ -862,19 +925,22 @@ int main(int argc, char**argv)
     printf(
      "Deducts the data type and the column name from first line and following literals in a file.\n"
      "Usage is %s [-coldel=<sep>] [-chardel=<chardel>] [-recdel=<recdel>] [-notitle][-debug[:<n>]] \\\n"
-     "            [-tbname:<tbname>][-verbose] <file name>|- [> outfile]\n"
+     "            [-copycast] [-drp] [-tbname:<tbname>] [-verbose] <file name>|- [> outfile]\n"
      "e. g.    %s -coldel:(SEMI|COMMA|BAR|x7c|','),' -chardel:(APO|QUOTE) myfile.txt   >myfile.ddl\n"
-		 "The hyphen instead of <file name> means stdin and makes the default table name \"stdin\".\n"
+     "The hyphen instead of <file name> means stdin and makes the default table name \"stdin\".\n"
      "-coldel=<sep> is the column delimiter, defaulting to ',',\n"
      "     and, depending on infile extension: txt -> '\\t', csv -> ',', bsv -> '|', ssv -> ';'\n"
      "-chardel=<sep> is the character/string delimiter, defaulting to empty string\n"
      "-recdel=<sep> is the record delimiter, defaulting to '\\n'\n"
      "-decpoint=<sep> is the decimal point, defaulting to '.'\n"
      " <sep> can be: SEMI|COMMA|BAR|TAB|APO[STROPHE]|QUOTE or #<ascii number> or 'x<hex number>' or Unix literals like '\\t'\n"
+     "-txt ^=^ -coldeltab and -chardelquote; -csv ^=^ rfc4180 compliant format: -coldelcomma and -chardelquote\n"
      "-debug[:<number>] prints lines in an extended display format; with <number> specified, only <number> lines, not all\n"
      "-notitle treats the first line as data, not column names\n"
      "-quid switches generation of quoted identifiers on\n"
-		 "-float[=<number] to prefer FLOATs over NUMERICs. No number or 0: always; else if more than scale of <number>.\n"
+     "-float[=<number] to prefer FLOATs over NUMERICs. No number or 0: always; else if more than scale of <number>.\n"
+     "-copycast adds a Vertica COPY statement, casting data correctly, to the output\n"
+     "-drp adds a DROP TABLE IF EXISTS statement before the CREATE TABLE statement\n"
      "-tbname:<tbname> uses <tbname> instead of the infile's basename as the table name\n"
      "-sch:<schemaname> adds <schemaname> to qualify the table name\n"
      "-cat:<catname> adds <catname> to qualify the table name\n"
@@ -898,6 +964,10 @@ int main(int argc, char**argv)
     } else if(!Strnicmp(argv[i],"-decpoint=",9)) {
       ChangeStrDefault(argv[i]+9,gDecPoint,sizeof(gDecPoint)-1);
       sprintf(numchars,"+-%s0123456789",gDecPoint);
+    } else if(!Strnicmp(argv[i],"-csv",4)) {
+      strcpy(gColDel,","); strcpy(gCharDel,"\"");
+    } else if(!Strnicmp(argv[i],"-txt",4)) {
+      strcpy(gColDel,"\t"); strcpy(gCharDel,"\"");
     } else if(!Strnicmp(argv[i],"-nullchar",9)) {
       ChangeStrDefault(argv[i]+10,gNullChar,sizeof(gNullChar)-1);
     } else if(!Strnicmp(argv[i],"-tbname=",7)) {
@@ -929,8 +999,12 @@ int main(int argc, char**argv)
         ChangeStrDefault(argv[i]+6, buf, sizeof(buf)-1);
         preferFloat=atoi(buf);
       } else {
-				preferFloat=1;
-			}
+    preferFloat=1;
+      }
+    } else if(!Stricmp(argv[i],"-copycast")) {
+      copycast=1;
+    } else if(!Stricmp(argv[i],"-drp")) {
+      drp=1;
     } else if(!Stricmp(argv[i],"-notitle")) {
       withTitle=0;
     } else if(!Stricmp(argv[i],"-verbose")) {
@@ -957,6 +1031,7 @@ int main(int argc, char**argv)
       perror(argv[i]);
       return(1);
     }
+    strcpy(flName,argv[i]);
   }
   if(!in) {
     fprintf(stderr,"no infile specfied (specify \"-\" for stdin)\n");
@@ -1007,6 +1082,7 @@ int main(int argc, char**argv)
     strcpy(gColDel,"|");
   }
   memset(gColType,0,sizeof(gColType));
+  memset(hasDeviantDecpoint,0,sizeof(hasDeviantDecpoint));
   while(Fgets(buffer,BUFLEN,in,gCharDel,gRecDel)) {
     unsigned char bombuf[]= {0xEF, 0xBB, 0xBF, 0x00};
     if(readCount==0 && !strncmp(buffer,(char *)bombuf,3)) {
@@ -1075,6 +1151,9 @@ int main(int argc, char**argv)
       } else {
         if(!gColIsNull[i]) {
           gThisType=GetDataType(i, colbuf[i], gColLen+i, gColPrec+i, gColScale+i);
+          if(!hasDeviantDecpoint[i]) {
+            hasDeviantDecpoint[i]=(gDecPoint[0]!='.' && strstr(colbuf[i],gDecPoint));
+          } 
         } else {
           gColIsNullable[i]=1;
           nullcount[i]++;
@@ -1120,7 +1199,6 @@ int main(int argc, char**argv)
               gColType[i]=D2L_TIMESTAMP; // if this is D2L_DATE and the previous was a D2L_TIME, D2L_TIMESTAMP takes both
             }
           } else if(gThisType == D2L_DATETIME) {
-// printf("new type is %d, type so far is %d\n", gThisType, gColType[i]);
             if(gColType[i] == D2L_NUMBER) {
               gColType[i]=D2L_STRING; // if this is D2L_DATETIME and the previous was a D2L_NUMBER, that's it -> D2L_STRING
             } else if(gColType[i] == D2L_TIMESTAMP) {
@@ -1146,53 +1224,29 @@ int main(int argc, char**argv)
   if(quotedIds) QuoteString(tbName);
   if(quotedIds&&scName[0]) QuoteString(scName);
   if(quotedIds&&ctName[0]) QuoteString(ctName);
-  printf("CREATE TABLE ");
-	if(ctName[0]) printf("%s.", ctName);
-	if(scName[0]||ctName[0]) printf("%s.", scName);
-	printf("%s (\n", tbName);
-  for(i=0;i<colCount;i++) {
-    if(gColType[i]==D2L_NOTYPE) {
-      strcpy(colTypeName[i],"VARCHAR(32)");
-    } else if(gColType[i]==D2L_BOOLEAN) {
-      strcpy(colTypeName[i],"BOOLEAN");
-    } else if(gColType[i]==D2L_UUID) {
-      strcpy(colTypeName[i],"UUID");
-    } else if(gColType[i]==D2L_FLOAT) {
-      strcpy(colTypeName[i],"FLOAT");
-    } else if(gColType[i]==D2L_NUMBER && gColScale[i]==0) {
-      if(gColPrec[i]<5)       strcpy(colTypeName[i],"SMALLINT");
-      else if(gColPrec[i]<10) strcpy(colTypeName[i],"INTEGER");
-      else if(gColPrec[i]<19) strcpy(colTypeName[i],"BIGINT");
-      else sprintf(colTypeName[i],"NUMERIC(%llu)",gColPrec[i]); 
-    } else if(gColType[i]==D2L_NUMBER) {
-		 	if(preferFloat && gColScale[i] >= preferFloat) {
-        strcpy(colTypeName[i],"FLOAT");
-			} else {
-        sprintf(colTypeName[i],"NUMERIC(%llu,%llu)",gColPrec[i]+gColScale[i],gColScale[i]);
-			}
-    } else if(gColType[i]==D2L_NSTRING) {
-      sprintf(colTypeName[i],"%s(%llu)",gColLen[i]>=10?"NCHAR VARYING":"NCHAR", gColLen[i]);
-    } else if(gColType[i]==D2L_STRING) {
-      sprintf(colTypeName[i],"%sCHAR(%llu)",gColLen[i]>=10?"VAR":"", gColLen[i]);
-    } else if(gColType[i]==D2L_DATE) {
-      strcpy(colTypeName[i],"DATE");
-    } else if(gColType[i]==D2L_DATETIME) {
-      strcpy(colTypeName[i],"TIMESTAMP(0)");
-    } else if(gColType[i]==D2L_TIMESTAMP) {
-      sprintf(colTypeName[i],"TIMESTAMP(%llu)",gColScale[i]);
-    } else if(gColType[i]==D2L_TIMESTAMPTZ) {
-      sprintf(colTypeName[i],"TIMESTAMPTZ(%llu)",gColScale[i]);
-    } else if(gColType[i]==D2L_TIME) {
-      if(!gColScale[i]) strcpy(colTypeName[i],"TIME");
-      else sprintf(colTypeName[i],"TIME(%llu)",gColScale[i]);
-    }
-  }
   maxNmLen=maxTpLen=0;
   for(i=0;i<colCount;i++) {
+    Buildtypename( 
+      gColType[i]
+     ,gColLen[i]
+     ,gColPrec[i]
+     ,gColScale[i]
+     ,colTypeName[i]
+    );
     maxNmLen=max(maxNmLen,(unsigned int)strlen(colName[i]));
     maxTpLen=max(maxTpLen,(unsigned int)strlen(colTypeName[i]));
     if(quotedIds) QuoteString(colName[i]);
   }
+  if(drp) {
+    printf("DROP TABLE IF EXISTS ");
+    if(ctName[0]) printf("%s.", ctName);
+    if(scName[0]||ctName[0]) printf("%s.", scName);
+    printf("%s;\n", tbName);
+  }
+  printf("CREATE TABLE ");
+  if(ctName[0]) printf("%s.", ctName);
+  if(scName[0]||ctName[0]) printf("%s.", scName);
+  printf("%s (\n", tbName);
   for(i=0;i<colCount;i++) {
     char nullLog[64]="";
     if(gColIsNullable[i]) {
@@ -1212,5 +1266,59 @@ int main(int argc, char**argv)
     , gColIsNullable[i]?nullLog:" NOT NULL");
   }
   printf(");\n");
+  if(copycast) {
+    printf("\n-- matching Vertica COPY statement:\n");
+    for(i=0;i<colCount;i++) {
+      if(i==0) {
+        printf("COPY ");
+        if(ctName[0]) printf("%s.", ctName);
+        if(scName[0]||ctName[0]) printf("%s.", scName);
+        printf("%s (\n  ", tbName);
+      } else {
+        printf(", ");
+      }
+      printf("%s_in", colName[i]);
+      printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i]))+1," ");
+      printf("FILLER ");
+      if( (IsNumeric(gColType[i])&& hasDeviantDecpoint[i] ) || !IsNumeric(gColType[i])) {
+        printf("VARCHAR");
+      } else {
+        printf("NUMERIC");
+      }
+      printf(", %s", colName[i]);
+      printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i]))+1," ");
+      printf("AS ");
+      if(IsNumeric(gColType[i]) &&  hasDeviantDecpoint[i] ) {
+        printf("REPLACE(");
+    } else {
+        printf("        ");
+    }
+      printf("%s_in",colName[i]);
+      printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i])),"");
+      if(IsNumeric(gColType[i])&& hasDeviantDecpoint[i] ) {
+        printf(",'%s','.')",gDecPoint);
+    } else {
+        printf("         ");
+    }
+      printf("::");
+    if(IsNumeric(gColType[i]) && hasDeviantDecpoint[i]) {
+        printf("NUMERIC::");
+    }
+    printf("%s",colTypeName[i]);
+      printf("\n");
+    }
+    if(strrchr(tbName,'.')!=NULL) {
+      memmove(tbName,strrchr(tbName,'.')+1,strlen(strrchr(tbName,'.')+1)+1);
+    }
+    printf(")\nFROM LOCAL '%s'\n", flName);
+    printf("DELIMITER %s",String2StringLiteral(stringlitbuf,gColDel,"'"));
+    if(!!gCharDel[0]) {
+      printf(" ENCLOSED BY %s",String2StringLiteral(stringlitbuf,gCharDel,"'"));
+    }
+    printf("\n");
+    printf("DIRECT\n");
+    if(withTitle) {printf("SKIP 1\n");}
+    printf("REJECTED DATA '%s.bad' EXCEPTIONS '%s.log'\n;\n", tbName, tbName);
+  } 
   return(0);
 }
