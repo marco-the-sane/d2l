@@ -3,8 +3,8 @@
 /* author marco gessner                                               */
 /*--------------------------------------------------------------------*/
 /* Compile like so:
-   gcc -O3 -fomit-frame-pointer -Wall -pedantic -std=c99 \
-   -D _GNU_SOURCE -o d2l d2l.c                                        */
+   gcc -O3 -fomit-frame-pointer -Wall -pedantic -std=c99 -D _GNU_SOURCE -o d2le d2le.c 
+*/
 /*--------------------------------------------------------------------*/
 
 /*------ Imported Modules --------------------------------------------*/
@@ -61,8 +61,11 @@ int dateLen=0;
 int withTitle=1;
 int quotedIds=0;
 int preferFloat=0;
+int copy=0;
+int cast=0;
 int copycast=0;
 int drp=0;
+int external=0;
 int debug=0;
 int verbose=0;
 int piped=0;
@@ -77,6 +80,9 @@ ColType gThisType=D2L_NOTYPE;
 ColType gColType[MAXCOLS];
 int gColIsNull[MAXCOLS];
 int gColIsNullable[MAXCOLS];
+unsigned long long thisColLen=0;
+unsigned long long thisColPrec=0;
+unsigned long long thisColScale=0;
 unsigned long long gColLen[MAXCOLS];
 unsigned long long gColPrec[MAXCOLS];
 unsigned long long gColScale[MAXCOLS];
@@ -320,7 +326,6 @@ static int GetColData(
 , char *charDel
 , char *recDel
 , char *nullChar
-, int forHeader
 ) {
   int r;
   unsigned long long i, pos=0;
@@ -333,16 +338,16 @@ static int GetColData(
     // navigate to first non-space
     while(isspace(buf[pos])&&(unsigned long long)buf[pos]!=iColDel) pos++; 
     gColIsNull[i]=0;
-//determining the maximal column count
-  if(!buf[pos] && readCount <= 1 && colCount == MAXCOLS) {
+    //determining the maximal column count
+    if(!buf[pos] && readCount <= 1 && colCount == MAXCOLS) {
       colCount=i;
       break;
     }
-// determine if it's a NULL field before parsing the following string
-// a) we're pointing at the zero terminator
-// b) we're pointing at the next column delimiter
-// c) we're pointing at the record delimiter
-// d) the null char is set and we're pointing at it
+    // determine if it's a NULL field before parsing the following string
+    // a) we're pointing at the zero terminator
+    // b) we're pointing at the next column delimiter
+    // c) we're pointing at the record delimiter
+    // d) the null char is set and we're pointing at it
     if((unsigned long long)buf[pos]==iColDel   
     || (unsigned long long)buf[pos]==iRecDel
     || ( iNullChar && iNullChar == *(unsigned long long*) (buf+pos) )
@@ -357,7 +362,7 @@ static int GetColData(
       memset(p,0,FIELDLEN);
       strcpy(typeName, "string");
       r=GetStringN(p, buf+pos, colDel, charDel, recDel, FIELDLEN-1);
-      if(r==0) gColIsNull[i]=1;
+      if(r==0||strlen(p)==0) gColIsNull[i]=1;
     }
     if(r<0) {
       fprintf(stderr,"%s(%llu)\t<%.*s...>\ncolumn %d, %s:",
@@ -405,7 +410,7 @@ void Buildtypename(
     else if(colPrec<19) strcpy(typename,"BIGINT");
     else sprintf(typename,"NUMERIC(%lu)",colPrec); 
   } else if(colType==D2L_NUMBER) {
-  if(preferFloat && scale > preferFloat) {
+  if(preferFloat && (int)scale > preferFloat) {
       strcpy(typename,"FLOAT");
   } else {
       sprintf(typename,"NUMERIC(%lu,%lu)",colPrec+scale,scale);
@@ -428,7 +433,6 @@ void Buildtypename(
   }
 }
 
-
 static int SIsAscii(char*s) {
   int i;
   for(i=0;!!s[i];i++) {
@@ -441,8 +445,7 @@ static int SIsAscii(char*s) {
 #define setnumlen(l,s){int _i=0;char *_cp=(s);for(_i=0;_cp[_i]&&isdigit(_cp[_i]);_i++){}; l=_i;}
 #define trimtrail0(s){int _i=strlen(s)-1;while(_i >=0 && s[_i]=='0') {s[_i]='\0';_i--;}};
 ColType GetDataType(
-  int i
-, char *s
+  char *s
 , unsigned long long *colLen
 , unsigned long long *colPrec
 , unsigned long long *colScale
@@ -450,9 +453,9 @@ ColType GetDataType(
 
   unsigned long long thisType=D2L_NOTYPE, thisPrec=0, thisScale=0;
   int dateLen=0;
-  *colLen=max(*colLen,(unsigned long long)strlen(s));
+  *colLen=(unsigned long long)strlen(s);
   if(!s[0]) {
-    thisType=D2L_NOTYPE;
+    thisType=D2L_STRING;
     thisScale=thisPrec=0;
   } else if (
      !Stricmp(s,"t")
@@ -719,7 +722,11 @@ ColType GetDataType(
          )
      ) 
     ) {
-    if(!s[dateLen]) {
+    if(!s[dateLen]
+       ||!strcmp(s+dateLen+1,"00:00:00")
+       ||!strcmp(s+dateLen+1,"00:00:00.000")
+       ||!strcmp(s+dateLen+1,"00:00:00.000000")
+    ) {
       thisType=D2L_DATE;
     } else {
 
@@ -754,7 +761,7 @@ ColType GetDataType(
        )
           ) {
             thisType=D2L_TIMESTAMPTZ;
-            *colScale=(unsigned long long)max(gColScale[i],thisScale);
+            *colScale=(unsigned long long)thisScale;
             return(thisType);
           } else {
             trimtrail0(s);
@@ -824,7 +831,7 @@ ColType GetDataType(
     setnumlen(thisPrec,s);
     if(!s[thisPrec]) {
       thisScale=0;
-      if(thisPrec==19 && atoi(t)<=9223372036854775807) {
+      if(thisPrec==19 && atol(t)<=9223372036854775807) {
         thisPrec=18;
       }
     } else {
@@ -838,11 +845,11 @@ ColType GetDataType(
             thisPrec++;
           }
           if(!strchr(s,'e') && !strchr(s,'E')) { 
-		    trimtrail0(s);
-		  }
+        trimtrail0(s);
+      }
           if(!strcmp(s,"0")) *s=0;
           setnumlen(thisScale,s);
-          if(thisPrec==19 && atoi(t)<=9223372036854775807) {
+          if(thisPrec==19 && atol(t)<=9223372036854775807) {
             thisPrec=18;
           }
           if(toupper(s[thisScale])=='E'
@@ -853,7 +860,7 @@ ColType GetDataType(
               ! s[thisScale+3] 
            ||(  isdigit(s[thisScale+3]) 
               &&!s[thisScale+4] 
-		     )
+             )
            )
           ) {
             thisType=D2L_FLOAT;
@@ -878,8 +885,8 @@ ColType GetDataType(
     thisType=D2L_STRING;
     thisScale=thisPrec=0;
   }
-  *colPrec =(unsigned long long)max(gColPrec[i],thisPrec);
-  *colScale=(unsigned long long)max(gColScale[i],thisScale);
+  *colPrec =(unsigned long long)thisPrec ;
+  *colScale=(unsigned long long)thisScale;
   return (thisType);
 }
 
@@ -925,7 +932,7 @@ int main(int argc, char**argv)
     printf(
      "Deducts the data type and the column name from first line and following literals in a file.\n"
      "Usage is %s [-coldel=<sep>] [-chardel=<chardel>] [-recdel=<recdel>] [-notitle][-debug[:<n>]] \\\n"
-     "            [-copycast] [-drp] [-tbname:<tbname>] [-verbose] <file name>|- [> outfile]\n"
+     "            [-copycast] [-copy] [-cast] [-drp] [-ext] [-tbname:<tbname>] [-verbose] <file name>|- [> outfile]\n"
      "e. g.    %s -coldel:(SEMI|COMMA|BAR|x7c|','),' -chardel:(APO|QUOTE) myfile.txt   >myfile.ddl\n"
      "The hyphen instead of <file name> means stdin and makes the default table name \"stdin\".\n"
      "-coldel=<sep> is the column delimiter, defaulting to ',',\n"
@@ -934,13 +941,15 @@ int main(int argc, char**argv)
      "-recdel=<sep> is the record delimiter, defaulting to '\\n'\n"
      "-decpoint=<sep> is the decimal point, defaulting to '.'\n"
      " <sep> can be: SEMI|COMMA|BAR|TAB|APO[STROPHE]|QUOTE or #<ascii number> or 'x<hex number>' or Unix literals like '\\t'\n"
-     "-txt ^=^ -coldeltab and -chardelquote; -csv ^=^ rfc4180 compliant format: -coldelcomma and -chardelquote\n"
+     "-txt ^=^ -coldeltab and -chardelquote;\n"
+     "-csv ^=^ rfc4180 compliant format: -coldelcomma and -chardelquote\n"
      "-debug[:<number>] prints lines in an extended display format; with <number> specified, only <number> lines, not all\n"
      "-notitle treats the first line as data, not column names\n"
      "-quid switches generation of quoted identifiers on\n"
      "-float[=<number] to prefer FLOATs over NUMERICs. No number or 0: always; else if more than scale of <number>.\n"
      "-copycast adds a Vertica COPY statement, casting data correctly, to the output\n"
      "-drp adds a DROP TABLE IF EXISTS statement before the CREATE TABLE statement\n"
+     "-ext generates a CREATE EXTERNAL TABLE IF NOT EXISTS statement.\n"
      "-tbname:<tbname> uses <tbname> instead of the infile's basename as the table name\n"
      "-sch:<schemaname> adds <schemaname> to qualify the table name\n"
      "-cat:<catname> adds <catname> to qualify the table name\n"
@@ -1001,8 +1010,14 @@ int main(int argc, char**argv)
       } else {
     preferFloat=1;
       }
+    } else if(!Stricmp(argv[i],"-copy")) {
+      copy=1;
+    } else if(!Stricmp(argv[i],"-cast")) {
+      cast=1;
     } else if(!Stricmp(argv[i],"-copycast")) {
-      copycast=1;
+      copycast=1;cast=1;copy=1;
+    } else if(!Stricmp(argv[i],"-ext")) {
+      external=1;
     } else if(!Stricmp(argv[i],"-drp")) {
       drp=1;
     } else if(!Stricmp(argv[i],"-notitle")) {
@@ -1095,7 +1110,7 @@ int main(int argc, char**argv)
       lineLen=strlen(buffer); 
       estLineCount= fsize / lineLen; // rough estimate of line count
     }
-    GetColData(buffer,colbuf,gColDel,gCharDel,gRecDel,gNullChar,readCount==1&&withTitle); 
+    GetColData(buffer,colbuf,gColDel,gCharDel,gRecDel,gNullChar); 
     if(debug){
       if(!showLineCount) { // meaning show all
         printf("line %zu\n", readCount);
@@ -1146,11 +1161,13 @@ int main(int argc, char**argv)
             Replace(colName[i],")","_");
           }
         } else {
-          gThisType=GetDataType(i, colbuf[i], gColLen+i, gColPrec+i, gColScale+i);
+          thisColLen=thisColPrec=thisColScale=0;
+          gThisType=GetDataType(colbuf[i], &thisColLen, &thisColPrec, &thisColScale);
         }
       } else {
         if(!gColIsNull[i]) {
-          gThisType=GetDataType(i, colbuf[i], gColLen+i, gColPrec+i, gColScale+i);
+          thisColLen=thisColPrec=thisColScale=0;
+          gThisType=GetDataType(colbuf[i], &thisColLen, &thisColPrec, &thisColScale);
           if(!hasDeviantDecpoint[i]) {
             hasDeviantDecpoint[i]=(gDecPoint[0]!='.' && strstr(colbuf[i],gDecPoint));
           } 
@@ -1161,6 +1178,9 @@ int main(int argc, char**argv)
         }
       }
       if(!withTitle || readCount > 1) {
+        gColLen  [i]=max(gColLen  [i]  ,thisColLen  );
+        gColPrec [i]=max(gColPrec [i]  ,thisColPrec );
+        gColScale[i]=max(gColScale[i]  ,thisColScale);
         // data type change decision tree. Datatype in this row detected
         // and put into gThisType. Compare with data types until now: gColType[i] .
         if(gColType[i]==D2L_NSTRING) {
@@ -1243,7 +1263,7 @@ int main(int argc, char**argv)
     if(scName[0]||ctName[0]) printf("%s.", scName);
     printf("%s;\n", tbName);
   }
-  printf("CREATE TABLE ");
+  printf("CREATE%s TABLE IF NOT EXISTS ", external?" EXTERNAL":"");
   if(ctName[0]) printf("%s.", ctName);
   if(scName[0]||ctName[0]) printf("%s.", scName);
   printf("%s (\n", tbName);
@@ -1265,60 +1285,96 @@ int main(int argc, char**argv)
     , colTypeName[i]
     , gColIsNullable[i]?nullLog:" NOT NULL");
   }
-  printf(");\n");
-  if(copycast) {
+  if(!copy&&!external) {
+    printf(");\n");
+  }
+  if(copy) {
+    printf(");\n");
     printf("\n-- matching Vertica COPY statement:\n");
+  } else if (external) {
+    printf(") AS\n");
+  }
+  if(copy|external) {
     for(i=0;i<colCount;i++) {
       if(i==0) {
         printf("COPY ");
-        if(ctName[0]) printf("%s.", ctName);
-        if(scName[0]||ctName[0]) printf("%s.", scName);
-        printf("%s (\n  ", tbName);
+        if(!external) {
+          if(ctName[0]) printf("%s.", ctName);
+          if(scName[0]||ctName[0]) printf("%s.", scName);
+          printf("%s (\n  ", tbName);
+        } else {
+          printf("(\n  ");
+        }
       } else {
         printf(", ");
       }
-      printf("%s_in", colName[i]);
-      printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i]))+1," ");
-      printf("FILLER ");
-      if( (IsNumeric(gColType[i])&& hasDeviantDecpoint[i] ) || !IsNumeric(gColType[i])) {
-        printf("VARCHAR");
+      if(cast) {
+        printf("%s_in", colName[i]);
+        printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i]))+1," ");
+        printf("FILLER ");
+        if( (IsNumeric(gColType[i])&& hasDeviantDecpoint[i] ) || !IsNumeric(gColType[i])) {
+          printf("VARCHAR");
+        } else {
+          printf("NUMERIC");
+        }
+        printf(", %s", colName[i]);
+        printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i]))+1," ");
+        printf("AS ");
+        if(IsNumeric(gColType[i]) &&  hasDeviantDecpoint[i] ) {
+          printf("REPLACE(");
+        } else {
+            printf("        ");
+        }
+        printf("%s_in",colName[i]);
+        printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i])),"");
+        if(IsNumeric(gColType[i])&& hasDeviantDecpoint[i] ) {
+          printf(",'%s','.')",gDecPoint);
+        } else {
+          printf("         ");
+        }
+        printf("::");
+        if(IsNumeric(gColType[i]) && hasDeviantDecpoint[i]) {
+            printf("NUMERIC::");
+        }
+        printf("%s",colTypeName[i]);
+        printf("\n");
       } else {
-        printf("NUMERIC");
+        if( (IsNumeric(gColType[i])&& hasDeviantDecpoint[i] )) {
+          printf("%s_in", colName[i]);
+          printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i]))+1," ");
+          printf("FILLER ");
+          printf("VARCHAR");
+          printf(", %s", colName[i]);
+          printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i]))+1," ");
+          printf("AS ");
+          printf("REPLACE(");
+          printf("%s_in",colName[i]);
+          printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i])),"");
+          printf(",'%s','.')",gDecPoint);
+          printf("::");
+          printf("NUMERIC::");
+          printf("%s",colTypeName[i]);
+          printf("\n");
+        } else {
+          printf("%s",colName[i]);
+          printf("\n");
+        }
       }
-      printf(", %s", colName[i]);
-      printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i]))+1," ");
-      printf("AS ");
-      if(IsNumeric(gColType[i]) &&  hasDeviantDecpoint[i] ) {
-        printf("REPLACE(");
-    } else {
-        printf("        ");
-    }
-      printf("%s_in",colName[i]);
-      printf("%-*s", (int)(maxNmLen-strlen((char*)colName[i])),"");
-      if(IsNumeric(gColType[i])&& hasDeviantDecpoint[i] ) {
-        printf(",'%s','.')",gDecPoint);
-    } else {
-        printf("         ");
-    }
-      printf("::");
-    if(IsNumeric(gColType[i]) && hasDeviantDecpoint[i]) {
-        printf("NUMERIC::");
-    }
-    printf("%s",colTypeName[i]);
-      printf("\n");
     }
     if(strrchr(tbName,'.')!=NULL) {
       memmove(tbName,strrchr(tbName,'.')+1,strlen(strrchr(tbName,'.')+1)+1);
     }
-    printf(")\nFROM LOCAL '%s'\n", flName);
+    printf(")\nFROM%s '%s'\n", external?"":" LOCAL", flName);
     printf("DELIMITER %s",String2StringLiteral(stringlitbuf,gColDel,"'"));
     if(!!gCharDel[0]) {
       printf(" ENCLOSED BY %s",String2StringLiteral(stringlitbuf,gCharDel,"'"));
     }
     printf("\n");
-    printf("DIRECT\n");
     if(withTitle) {printf("SKIP 1\n");}
-    printf("REJECTED DATA '%s.bad' EXCEPTIONS '%s.log'\n;\n", tbName, tbName);
+    if(copycast) {
+      printf("REJECTED DATA '%s.bad' EXCEPTIONS '%s.log'\n", tbName, tbName);
+    }
+    printf(";\n");
   } 
   return(0);
 }
