@@ -74,7 +74,9 @@ Other switches are:
  - `-float[:<number>]` to prefer FLOATs over NUMERICs. No number or 0 means always; else if more than `<number>` digits.
  - `-colcount:<number>` will parse exactly the specified number of columns, no matter how many column delimiters in the first line.
  - `-drp` will generate a `DROP TABLE IF EXISTS` statement before the `CREATE TABLE` statement.
- - `-copycast` will generate a Vertica `COPY` statement to load the data and cast it to the detected final data types.
+ - `-copy` will generate a Vertica `COPY` statement to load the data from a local file.
+ - `-ext` will generate a Vertica `CREATE EXTERNAL TABLE` statement for a server-sided CSV file.
+ - `-cast` works with `-ext` or `-copy`, and will modify the `COPY` clause to hard-cast to the detected data types.
  - `-verbose` will print the parsed row count every 10,000 rows.
  - `-debug[:<number>]` will print an extended format of each line parsed. Either rather randomly, just `<number>` lines, or, with no number specified, all lines:
  ```bash
